@@ -43,13 +43,20 @@ struct ContentView: View {
     @State private var gestureActive = false
     @State private var gestureDelta: CGFloat = 0
 
+    // Execution safety toggles (TR-26/OB-22 confirmation-policy pattern). Safer state is
+    // the default for each; flipping to the riskier state shows a one-time risk alert and
+    // reverts on cancel. Both are actually wired into every submission path via trigger().
+    @State private var confirmationEnabled = true   // off = trades fire instantly, no Confirm step
+    @State private var swipeTradeEnabled = false     // on = trackpad gesture can submit real orders
+    @State private var pendingRiskAlert: RiskAlertKind?
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("SetupRush Trader")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
-                Text("BETA 0.1")
+                Text("BETA 0.2")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
@@ -62,20 +69,45 @@ struct ContentView: View {
                     .foregroundStyle(Theme.warn)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(Theme.warn.opacity(0.5), lineWidth: 1))
-                Spacer()
-                if showFootprint {
-                    Picker("", selection: $footprintMode) {
-                        ForEach(FootprintDisplayMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                Spacer(minLength: 12)
+                // Horizontal scroll as a safety net: a plain HStack silently clips/hides
+                // trailing content instead of shrinking it when the window gets narrow —
+                // that's exactly what made the toggles "not visible". This keeps them
+                // reachable at any window width instead of invisibly cut off.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        if showFootprint {
+                            Picker("", selection: $footprintMode) {
+                                ForEach(FootprintDisplayMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 160)
                         }
+                        Toggle("Footprint", isOn: $showFootprint)
+                            .toggleStyle(.switch)
+                            .tint(Theme.accent)
+                            .foregroundStyle(Theme.textSecondary)
+                        Divider().frame(height: 16).background(Theme.borderSubtle)
+                        Toggle("Confirm", isOn: $confirmationEnabled)
+                            .toggleStyle(.switch)
+                            .tint(Theme.accent)
+                            .foregroundStyle(Theme.textSecondary)
+                            .onChange(of: confirmationEnabled) { old, new in
+                                if old && !new { pendingRiskAlert = .disableConfirmation }
+                            }
+                        Toggle("Swipe trade", isOn: $swipeTradeEnabled)
+                            .toggleStyle(.switch)
+                            .tint(Theme.accent)
+                            .foregroundStyle(Theme.textSecondary)
+                            .onChange(of: swipeTradeEnabled) { old, new in
+                                if !old && new { pendingRiskAlert = .enableSwipeTrade }
+                            }
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 160)
+                    .fixedSize()
                 }
-                Toggle("Footprint", isOn: $showFootprint)
-                    .toggleStyle(.switch)
-                    .tint(Theme.accent)
-                    .foregroundStyle(Theme.textSecondary)
+                .frame(maxWidth: 560)
             }
             .padding(12)
             .background(Theme.bgSurface)
@@ -88,25 +120,25 @@ struct ContentView: View {
 
             HStack(spacing: 0) {
                 ZStack {
-                    ChartView(candles: candles, footprint: footprint,
+                    ChartView(candles: candles, footprint: footprint, positions: positions, pointValue: mockPointValue,
                               startIndex: $startIndex, candleWidth: $candleWidth,
                               showFootprint: showFootprint, footprintMode: footprintMode, tickSize: tickSize,
-                              onGestureBegin: { gestureActive = true; gestureDelta = 0 },
-                              onGestureChange: { gestureDelta = $0 },
+                              onGestureBegin: { if swipeTradeEnabled { gestureActive = true; gestureDelta = 0 } },
+                              onGestureChange: { if swipeTradeEnabled { gestureDelta = $0 } },
                               onGestureEnd: { final in
                                   gestureActive = false
-                                  if let direction = armDirection(forDelta: final, threshold: armThreshold) {
-                                      submit(direction)
+                                  if swipeTradeEnabled, let direction = armDirection(forDelta: final, threshold: armThreshold) {
+                                      trigger(direction)
                                   }
                                   gestureDelta = 0
                               })
                     GestureArmOverlay(active: gestureActive, delta: gestureDelta, threshold: armThreshold)
                 }
                 Sidebar(ladder: ladder, lastPrice: candles.last?.c, qty: $ticketQty, bracket: $bracket,
-                        onBuy: { arm(.long) }, onSell: { arm(.short) })
+                        onBuy: { trigger(.long) }, onSell: { trigger(.short) })
             }
 
-            Dock(positions: positions, orders: orders)
+            Dock(positions: positions, orders: orders, currentPrice: candles.last?.c, pointValue: mockPointValue)
         }
         .frame(minWidth: 1180, minHeight: 700)
         .background(Theme.bgBase)
@@ -119,13 +151,37 @@ struct ContentView: View {
             // dismiss. A hidden Button grabs the key event; SwiftUI has no raw key-down
             // modifier on macOS without this.
             Group {
-                Button("") { arm(.long) }.keyboardShortcut("b", modifiers: []).hidden()
-                Button("") { arm(.short) }.keyboardShortcut("s", modifiers: []).hidden()
+                Button("") { trigger(.long) }.keyboardShortcut("b", modifiers: []).hidden()
+                Button("") { trigger(.short) }.keyboardShortcut("s", modifiers: []).hidden()
                 Button("") { confirmArmed() }.keyboardShortcut(.return, modifiers: []).hidden()
             }
         )
         .onAppear(perform: load)
         .onTapGesture { armed = nil } // dismiss on empty-area click, CH-25a
+        .alert(item: $pendingRiskAlert) { kind in
+            switch kind {
+            case .enableSwipeTrade:
+                Alert(title: Text("Swipe-to-trade risk"),
+                      message: Text("A two-finger pull on the chart can submit a real order directly. An accidental swipe while panning or zooming could trigger an unintended trade."),
+                      primaryButton: .destructive(Text("Enable")) {},
+                      secondaryButton: .cancel(Text("Keep off")) { swipeTradeEnabled = false })
+            case .disableConfirmation:
+                Alert(title: Text("Confirmation disabled"),
+                      message: Text("Trades will submit immediately with no Confirm step — including an armed swipe gesture. Mistaps or misreads won't be caught before the order is sent."),
+                      primaryButton: .destructive(Text("Disable")) {},
+                      secondaryButton: .cancel(Text("Keep required")) { confirmationEnabled = true })
+            }
+        }
+    }
+
+    // Single entry point every submission path (ticket, keyboard, swipe) routes through —
+    // so the confirmationEnabled toggle is actually considered everywhere, not just one path.
+    private func trigger(_ direction: ArmDirection) {
+        if confirmationEnabled {
+            arm(direction)
+        } else {
+            submit(direction)
+        }
     }
 
     private func load() {
@@ -234,6 +290,11 @@ struct ContentView: View {
 struct PnLAlert: Identifiable, Equatable {
     let id = UUID()
     let amount: Decimal
+}
+
+private enum RiskAlertKind: String, Identifiable {
+    case enableSwipeTrade, disableConfirmation
+    var id: String { rawValue }
 }
 
 // Collects money in green / stings in red — a deliberate, explicitly-requested exception

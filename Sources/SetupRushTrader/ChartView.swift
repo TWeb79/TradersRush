@@ -7,6 +7,8 @@ import SwiftUI
 struct ChartView: View {
     let candles: [Candle]
     let footprint: [FootprintBar]
+    let positions: [Position]
+    let pointValue: Decimal
     @Binding var startIndex: Double
     @Binding var candleWidth: CGFloat
     var showFootprint: Bool
@@ -30,7 +32,15 @@ struct ChartView: View {
             guard start < end else { return }
             let visible = candles[start..<end]
 
-            let highs = visible.map { $0.h }, lows = visible.map { $0.l }
+            // Extend the price range to cover every open position's entry/SL/TP, not just
+            // visible candle highs/lows — otherwise a line can silently scroll off-screen
+            // the moment price moves away from it instead of keeping it in view.
+            var highs = visible.map { $0.h }, lows = visible.map { $0.l }
+            for pos in positions {
+                highs.append(pos.avgPrice); lows.append(pos.avgPrice)
+                if let sl = pos.slPrice { highs.append(sl); lows.append(sl) }
+                if let tp = pos.tpPrice { highs.append(tp); lows.append(tp) }
+            }
             guard let maxH = highs.max(), let minL = lows.min(), maxH > minL else { return }
             let priceSpan = Double(truncating: (maxH - minL) as NSNumber)
 
@@ -65,6 +75,14 @@ struct ChartView: View {
                 }
             }
 
+            // CH-10..19a (minimal): entry/SL/TP lines pinned in price-space. Positions are
+            // only ever what checkPositions() currently holds open (ContentView), so a
+            // closed trade disappearing from the chart is just this array no longer
+            // containing it — no separate removal logic needed here.
+            for pos in positions {
+                drawPositionOverlay(pos, size: size, context: context, y: y, currentPrice: visible.last?.c)
+            }
+
             // CH-06 (minimal): last price tag on the right axis, tinted by tick direction —
             // price-space anchor so the hero (price action) always reads at a glance (VD-02 tabular digits).
             if let last = visible.last {
@@ -87,11 +105,15 @@ struct ChartView: View {
                     let oldWidth = candleWidth
                     let newWidth = min(maxWidth, max(minWidth, oldWidth * (1 + magnification)))
                     guard newWidth != oldWidth else { return }
-                    // Keep the candle under the pinch stationary: find its fractional index
-                    // at the old width, then re-derive startIndex so it lands at the same x.
-                    let anchorIndex = startIndex + Double(anchorX / oldWidth)
+                    // Must match the render formula exactly: x = (i_global - start) * candleWidth
+                    // + candleWidth/2, where `start` is the floored startIndex the renderer
+                    // actually slices on. The previous version used continuous startIndex and
+                    // dropped the +candleWidth/2 term, so every pinch tick anchored to the wrong
+                    // point and the view visibly drifted/jumped instead of zooming in place.
+                    let start = Double(Int(startIndex))
+                    let anchorGlobalIndex = start + Double(anchorX / oldWidth) - 0.5
                     candleWidth = newWidth
-                    startIndex = max(0, anchorIndex - Double(anchorX / newWidth))
+                    startIndex = max(0, anchorGlobalIndex - Double(anchorX / newWidth) + 0.5)
                 },
                 onGestureBegin: onGestureBegin,
                 onGestureChange: onGestureChange,
@@ -181,6 +203,55 @@ struct ChartView: View {
                     at: CGPoint(x: x, y: midY)
                 )
             }
+        }
+    }
+
+    // CH-10/12/17/18: entry line (grey, dashed) with an id + live P&L chip, plus SL (red)
+    // and TP (green) lines. SL moves live when BE/TSL ratchets it in ContentView — this
+    // just draws whatever pos.slPrice currently is, so it tracks automatically.
+    private func drawPositionOverlay(_ pos: Position, size: CGSize, context: GraphicsContext, y: (Decimal) -> CGFloat, currentPrice: Decimal?) {
+        func dashedLine(at price: Decimal, color: Color) {
+            var line = Path()
+            let py = y(price)
+            line.move(to: CGPoint(x: 0, y: py))
+            line.addLine(to: CGPoint(x: size.width, y: py))
+            context.stroke(line, with: .color(color), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+        }
+
+        dashedLine(at: pos.avgPrice, color: Theme.textSecondary)
+        if let sl = pos.slPrice { dashedLine(at: sl, color: Theme.bear) }
+        if let tp = pos.tpPrice { dashedLine(at: tp, color: Theme.bull) }
+
+        let shortId = pos.id.uuidString.prefix(6)
+        let sideGlyph = pos.side == .buy ? "▲" : "▼"
+        var pnlText = "—"
+        var pnlColor = Theme.textSecondary
+        if let currentPrice {
+            let points = pos.side == .buy ? currentPrice - pos.avgPrice : pos.avgPrice - currentPrice
+            let pnl = points * Decimal(pos.volume) * pointValue
+            pnlText = "\(pnl >= 0 ? "+" : "")\(priceString(pnl)) EUR"
+            pnlColor = pnl >= 0 ? Theme.bull : Theme.bear
+        }
+
+        let entryY = y(pos.avgPrice)
+        let label = "#\(shortId) \(sideGlyph) \(pnlText)"
+        context.fill(Path(CGRect(x: 6, y: entryY - 9, width: 150, height: 18)), with: .color(Theme.bgElevated.opacity(0.92)))
+        context.draw(
+            Text(label).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundColor(pnlColor),
+            at: CGPoint(x: 81, y: entryY)
+        )
+
+        if let sl = pos.slPrice {
+            let slY = y(sl)
+            context.fill(Path(CGRect(x: size.width - 118, y: slY - 8, width: 60, height: 16)), with: .color(Theme.bear.opacity(0.85)))
+            context.draw(Text("SL \(priceString(sl))").font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundColor(Theme.bgBase),
+                         at: CGPoint(x: size.width - 88, y: slY))
+        }
+        if let tp = pos.tpPrice {
+            let tpY = y(tp)
+            context.fill(Path(CGRect(x: size.width - 118, y: tpY - 8, width: 60, height: 16)), with: .color(Theme.bull.opacity(0.85)))
+            context.draw(Text("TP \(priceString(tp))").font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundColor(Theme.bgBase),
+                         at: CGPoint(x: size.width - 88, y: tpY))
         }
     }
 

@@ -1,6 +1,6 @@
 # SetupRush Trader
 
-**Beta 0.1** — a native macOS SwiftUI trading-terminal prototype, built against a
+**Beta 0.2** — a native macOS SwiftUI trading-terminal prototype, built against a
 mock gateway ahead of a real [cTrader](https://ctrader.com) MCP connection.
 
 ![SetupRush Trader screenshot](docs/screenshot.png)
@@ -9,17 +9,26 @@ mock gateway ahead of a real [cTrader](https://ctrader.com) MCP connection.
 > labeled **MOCK DATA** in the header). There is no real market connection, no
 > account, and no real money at risk — this is a UI/UX prototype.
 
+**New in 0.2:** live entry/SL/TP lines on the chart for open positions, execution-safety
+toggles (confirmation requirement, swipe-trade opt-in) with risk alerts, a scrollable
+positions/orders dock, and a corrected pinch-to-zoom anchor.
+
 ## What's in this build
 
-- **Chart**: candlestick rendering, pinch-to-zoom anchored at the pinch point, pan
+- **Chart**: candlestick rendering, pinch-to-zoom anchored at the pinch point, pan, and
+  live entry/SL/TP lines for open positions — SL updates automatically as BE/TSL ratchet
+  it, and the lines disappear the moment a position closes
 - **Footprint / order-flow view**: Bid×Ask and Delta display modes, with a
   zoomed-in numeric tier (bid/ask/delta per price level) built on the causal
   bid/ask-split construction from the DeltaTrader order-flow playbook
 - **Order ticket**: Buy/Sell, quantity, and a full SL / TSL (trailing stop) / TP /
   BE (breakeven) bracket
 - **Synthetic DOM ladder** with heat-bars, clearly labeled as mock
-- **Positions/Orders dock** with honest empty states — positions are never
+- **Positions/Orders dock**, scrollable, with honest empty states — positions are never
   fabricated; they only appear from your own simulated trades
+- **Execution safety toggles**: require confirmation before every trade (default on) and
+  opt in to trackpad swipe-trading (default off), each with a one-time risk alert on the
+  riskier transition
 - **Two execution paths**:
   - keyboard (`B`/`S` + Return) or ticket buttons, with an arm-then-confirm banner
   - a trackpad two-finger **pull-to-arm gesture**: a center ring with a knob that
