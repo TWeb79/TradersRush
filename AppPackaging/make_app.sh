@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 swift build -c release
 
-APP="TraderRush.app"
+APP="TradersRush.app"
 rm -rf "$APP" "SetupRush Trader.app" # remove the old pre-rename bundle if present
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/SetupRushTrader "$APP/Contents/MacOS/SetupRushTrader"

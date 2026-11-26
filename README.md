@@ -1,9 +1,9 @@
-# TraderRush
+# TradersRush
 
 **Beta 0.3** — a native macOS SwiftUI trading-terminal prototype, built against a
 mock gateway ahead of a real [cTrader](https://ctrader.com) MCP connection.
 
-![TraderRush screenshot](docs/screenshot.png)
+![TradersRush screenshot](docs/screenshot.png)
 
 > All prices, order-flow and order-book data on screen are synthetic (clearly
 > labeled **MOCK DATA** in the header, flips to **LIVE (MCP)** only once a real
@@ -13,7 +13,7 @@ mock gateway ahead of a real [cTrader](https://ctrader.com) MCP connection.
 **New in 0.3:** a real MCP connection layer — config sheet, enable toggle, and a footer
 status indicator — that genuinely attempts the MCP handshake and a candle-history tool
 call rather than just toggling a label; a second, more reliable zoom path (⌥+scroll); and
-the app's rename from SetupRush Trader to TraderRush.
+the app's rename from SetupRush Trader to TradersRush.
 
 ## What's in this build
 

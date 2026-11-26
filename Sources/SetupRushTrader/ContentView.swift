@@ -66,7 +66,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("TraderRush")
+                Text("TradersRush")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                 Text("BETA 0.3")
