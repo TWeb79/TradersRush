@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var startIndex: Double = 0
     @State private var candleWidth: CGFloat = 10
     @State private var showFootprint = false
+    @State private var extendedView = false
     @State private var footprintMode: FootprintDisplayMode = .bidAsk
     @State private var ticketQty = 1
     @State private var bracket = BracketSettings()
@@ -63,13 +64,15 @@ struct ContentView: View {
     // never set just because the transport connected. See MCPClient.fetchCandleHistory.
     @State private var liveDataActive = false
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("TradersRush")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
-                Text("BETA 0.3")
+                Text("BETA 0.4")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
@@ -103,6 +106,10 @@ struct ContentView: View {
                             .toggleStyle(.switch)
                             .tint(Theme.accent)
                             .foregroundStyle(Theme.textSecondary)
+                        Toggle("Extended View", isOn: $extendedView)
+                            .toggleStyle(.switch)
+                            .tint(Theme.accent)
+                            .foregroundStyle(Theme.textSecondary)
                         Divider().frame(height: 16).background(Theme.borderSubtle)
                         Toggle("Confirm", isOn: $confirmationEnabled)
                             .toggleStyle(.switch)
@@ -125,7 +132,7 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .sheet(isPresented: $showMCPConfig) {
                             MCPConfigSheet(config: mcpConfig, enabled: mcpEnabled, status: mcpStatus,
-                                           onSave: { mcpConfig = $0 }, onToggle: setMCPEnabled)
+                                           onSave: { mcpConfig = $0; AppConfigStore.save(currentAppConfig()) }, onToggle: setMCPEnabled)
                         }
                     }
                     .fixedSize()
@@ -145,7 +152,7 @@ struct ContentView: View {
                 ZStack {
                     ChartView(candles: candles, footprint: footprint, positions: positions, pointValue: mockPointValue,
                               startIndex: $startIndex, candleWidth: $candleWidth,
-                              showFootprint: showFootprint, footprintMode: footprintMode, tickSize: tickSize,
+                              showFootprint: showFootprint, footprintMode: footprintMode, extendedView: extendedView, tickSize: tickSize,
                               onGestureBegin: { if swipeTradeEnabled { gestureActive = true; gestureDelta = 0 } },
                               onGestureChange: { if swipeTradeEnabled { gestureDelta = $0 } },
                               onGestureEnd: { final in
@@ -195,6 +202,11 @@ struct ContentView: View {
         )
         .onAppear(perform: load)
         .onTapGesture { armed = nil } // dismiss on empty-area click, CH-25a
+        .onChange(of: scenePhase) { _, phase in
+            // Flushes every setting (footprint, confirm, swipe-trade, ticket qty, bracket,
+            // MCP config) on backgrounding/quitting — one hook instead of one per @State var.
+            if phase != .active { AppConfigStore.save(currentAppConfig()) }
+        }
         .alert(item: $pendingRiskAlert) { kind in
             switch kind {
             case .enableSwipeTrade:
@@ -281,10 +293,35 @@ struct ContentView: View {
         startIndex = Double(max(0, candles.count - 80))
     }
 
+    private func currentAppConfig() -> AppConfig {
+        AppConfig(mcpConfig: mcpConfig, mcpEnabled: mcpEnabled,
+                  showFootprint: showFootprint, footprintMode: footprintMode, extendedView: extendedView,
+                  confirmationEnabled: confirmationEnabled, swipeTradeEnabled: swipeTradeEnabled,
+                  ticketQty: ticketQty, bracket: bracket)
+    }
+
+    private func apply(_ config: AppConfig) {
+        mcpConfig = config.mcpConfig
+        showFootprint = config.showFootprint
+        footprintMode = config.footprintMode
+        extendedView = config.extendedView
+        confirmationEnabled = config.confirmationEnabled
+        swipeTradeEnabled = config.swipeTradeEnabled
+        ticketQty = config.ticketQty
+        bracket = config.bracket
+        // mcpEnabled is deliberately not set here — the caller decides whether to call
+        // setMCPEnabled(true), which both sets it and genuinely retries the connection.
+    }
+
     private func load() {
         loadMockData()
+        if let saved = AppConfigStore.load() {
+            apply(saved)
+            if saved.mcpEnabled { setMCPEnabled(true) }
+        }
         #if DEBUG
         armDirectionSelfCheck()
+        appConfigStoreSelfCheck()
         #endif
     }
 
@@ -441,6 +478,17 @@ private func armDirectionSelfCheck() {
     assert(armDirection(forDelta: 150, threshold: 110) == .short)
     assert(armDirection(forDelta: 50, threshold: 110) == nil)
     assert(armDirection(forDelta: -50, threshold: 110) == nil)
+}
+
+private func appConfigStoreSelfCheck() {
+    let sample = AppConfig(mcpConfig: MCPConfig(host: "x", port: "1", path: "/p", useTLS: true, authToken: "t"),
+                            mcpEnabled: true, showFootprint: true, footprintMode: .delta, extendedView: true,
+                            confirmationEnabled: false, swipeTradeEnabled: true, ticketQty: 3, bracket: BracketSettings())
+    guard let data = try? JSONEncoder().encode(sample), let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) else {
+        assertionFailure("AppConfig failed to encode/decode")
+        return
+    }
+    assert(decoded == sample, "AppConfig round-trip failed")
 }
 #endif
 

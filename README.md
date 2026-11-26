@@ -1,6 +1,6 @@
 # TradersRush
 
-**Beta 0.3** — a native macOS SwiftUI trading-terminal prototype, built against a
+**Beta 0.4** — a native macOS SwiftUI trading-terminal prototype, built against a
 mock gateway ahead of a real [cTrader](https://ctrader.com) MCP connection.
 
 ![TradersRush screenshot](docs/screenshot.png)
@@ -10,16 +10,24 @@ mock gateway ahead of a real [cTrader](https://ctrader.com) MCP connection.
 > candle-history tool call actually succeeds). There is no real market connection, no
 > account, and no real money at risk — this is a UI/UX prototype.
 
-**New in 0.3:** a real MCP connection layer — config sheet, enable toggle, and a footer
-status indicator — that genuinely attempts the MCP handshake and a candle-history tool
-call rather than just toggling a label; a second, more reliable zoom path (⌥+scroll); and
-the app's rename from SetupRush Trader to TradersRush.
+**New in 0.4:** an Extended View toggle adding a VWAP line, a session volume/delta profile,
+and a CVD/volume/delta flow strip beneath the chart — replicating the most distinctive
+parts of a reference order-flow dashboard using only data this app already computes; and
+a local settings file (`~/Library/Application Support/TradersRush/config.json`) that
+persists the MCP connection, toggles, ticket quantity, and bracket defaults across relaunches.
 
 ## What's in this build
 
 - **Chart**: candlestick rendering, pinch-to-zoom and ⌥+scroll zoom (both anchored at the
   cursor/pinch point), pan, and live entry/SL/TP lines for open positions — SL updates
   automatically as BE/TSL ratchet it, and the lines disappear the moment a position closes
+- **Extended View** (toggle): VWAP line, a session volume/delta profile along the chart's
+  right edge, and a CVD/bar-volume/bar-delta flow strip beneath the main chart — all
+  column-aligned, all derived from the same footprint data the app already builds
+- **Persisted settings**: MCP connection details, Footprint/Extended View/Confirm/Swipe-trade
+  toggles, ticket quantity, and bracket defaults are saved to a local JSON file and restored
+  on launch (auth token is stored in plaintext there — a local-prototype tradeoff, not
+  suitable for real credentials)
 - **MCP connection**: a config sheet (gear icon) with editable host/port/path/TLS/auth
   fields and an explicit Save, an Enable toggle, and a footer status indicator
   (disabled/connecting/connected/failed). Enabling it performs a real MCP `initialize` →

@@ -36,7 +36,7 @@ struct FootprintBar: Identifiable {
 
 // CH-34: footprint can show either raw bid/ask volume per bin or just the net delta —
 // real footprint tools (and the DeltaTrader playbook §11) treat these as distinct reads.
-enum FootprintDisplayMode: String, CaseIterable, Identifiable {
+enum FootprintDisplayMode: String, CaseIterable, Identifiable, Codable {
     case bidAsk = "Bid × Ask"
     case delta = "Delta"
     var id: String { rawValue }
@@ -72,7 +72,7 @@ struct WorkingOrder: Identifiable {
 
 // Ticket's bracket inputs, in price-distance units (not yet ticks/R-multiple — spec TR-20
 // scope). Resolved to absolute prices on submit (see ContentView.submit).
-struct BracketSettings: Equatable {
+struct BracketSettings: Equatable, Codable {
     var slEnabled = true
     var slDistance: Decimal = 2.0
     var tpEnabled = true
@@ -102,7 +102,7 @@ protocol TradingGateway {
 // Defaults here follow this repo's own RULES_ports.md convention (project 62, FastAPI/
 // service category) as a reasonable starting point to prefill — not a claim that a real
 // server is listening there.
-struct MCPConfig: Equatable {
+struct MCPConfig: Equatable, Codable {
     var host: String = "localhost"
     var port: String = "8162"
     var path: String = "/mcp"
