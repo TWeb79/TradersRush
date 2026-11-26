@@ -11,11 +11,11 @@
     <key>CFBundleName</key>
     <string>SetupRush Trader</string>
     <key>CFBundleDisplayName</key>
-    <string>SetupRush Trader</string>
+    <string>SetupRush Trader (Beta 0.1)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1</string>
+    <string>0.1-beta</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>

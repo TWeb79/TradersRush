@@ -49,6 +49,11 @@ struct ContentView: View {
                 Text("SetupRush Trader")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
+                Text("BETA 0.1")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Theme.borderSubtle, lineWidth: 1))
                 // Honest data-source badge, not decoration — nothing on screen is live
                 // yet, and silently showing synthetic prices as real would be exactly the
                 // kind of fabricated-data problem the CX brief §12/§16 warns against.
