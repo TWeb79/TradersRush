@@ -97,3 +97,34 @@ protocol TradingGateway {
     func footprint(for candles: [Candle], tickSize: Decimal) -> [FootprintBar]
     func ladder(around last: Decimal, tickSize: Decimal, levels: Int) -> [LadderLevel]
 }
+
+// Spec §2.2/§2.2a: host/port/path MUST be user-entered at runtime, nothing hardcoded.
+// Defaults here follow this repo's own RULES_ports.md convention (project 62, FastAPI/
+// service category) as a reasonable starting point to prefill — not a claim that a real
+// server is listening there.
+struct MCPConfig: Equatable {
+    var host: String = "localhost"
+    var port: String = "8162"
+    var path: String = "/mcp"
+    var useTLS: Bool = false
+    var authToken: String = ""
+
+    var url: URL? {
+        var comps = URLComponents()
+        comps.scheme = useTLS ? "https" : "http"
+        comps.host = host
+        comps.port = Int(port)
+        comps.path = path.hasPrefix("/") ? path : "/\(path)"
+        return comps.url
+    }
+}
+
+// §6.6 connection state machine, trimmed to what a reachability check can honestly report.
+// `.live` means the transport answered — it does NOT mean real trading data is flowing,
+// since the server's actual tool contract (Appendix A) is still unconfirmed (spec §20 Q1).
+enum MCPConnectionStatus: Equatable {
+    case disabled
+    case connecting
+    case live
+    case failed(String)
+}

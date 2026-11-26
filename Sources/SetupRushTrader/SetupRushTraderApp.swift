@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct SetupRushTraderApp: App {
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("TraderRush") {
             ContentView()
         }
         .windowResizability(.contentSize)

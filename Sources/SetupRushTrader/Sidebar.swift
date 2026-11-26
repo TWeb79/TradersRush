@@ -6,6 +6,8 @@ import SwiftUI
 struct Sidebar: View {
     let ladder: [LadderLevel]
     let lastPrice: Decimal?
+    let budget: Decimal
+    let startingBudget: Decimal
     @Binding var qty: Int
     @Binding var bracket: BracketSettings
     var onBuy: () -> Void
@@ -13,6 +15,7 @@ struct Sidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            BudgetHeader(budget: budget, startingBudget: startingBudget)
             QuickExecutionTicket(lastPrice: lastPrice, qty: $qty, bracket: $bracket, onBuy: onBuy, onSell: onSell)
             Divider().background(Theme.borderSubtle)
             LadderView(ladder: ladder)
@@ -20,6 +23,39 @@ struct Sidebar: View {
         .frame(width: 220)
         .background(Theme.bgSurface)
         .overlay(Rectangle().fill(Theme.borderSubtle).frame(width: 1), alignment: .leading)
+    }
+}
+
+// TR-41 minimal scope: account balance, colored relative to the starting balance (not
+// zero) so it reads as "up/down for this session" rather than an absolute good/bad value.
+// The digit-roll comes from .numericText — ContentView wraps the mutation in
+// withAnimation, so this just needs to declare the transition.
+private struct BudgetHeader: View {
+    let budget: Decimal
+    let startingBudget: Decimal
+
+    private var color: Color {
+        if budget > startingBudget { return Theme.bull }
+        if budget < startingBudget { return Theme.bear }
+        return Theme.textPrimary
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("BUDGET").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+            Text("\(budgetString) EUR")
+                .font(.system(size: 22, weight: .bold, design: .monospaced))
+                .foregroundStyle(color)
+                .contentTransition(.numericText(value: Double(truncating: budget as NSNumber)))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Theme.bgElevated)
+        .overlay(Rectangle().fill(Theme.borderSubtle).frame(height: 1), alignment: .bottom)
+    }
+
+    private var budgetString: String {
+        budget.formatted(.number.precision(.fractionLength(2)).locale(Locale(identifier: "en_US_POSIX")))
     }
 }
 

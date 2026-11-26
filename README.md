@@ -1,26 +1,36 @@
-# SetupRush Trader
+# TraderRush
 
-**Beta 0.2** — a native macOS SwiftUI trading-terminal prototype, built against a
+**Beta 0.3** — a native macOS SwiftUI trading-terminal prototype, built against a
 mock gateway ahead of a real [cTrader](https://ctrader.com) MCP connection.
 
-![SetupRush Trader screenshot](docs/screenshot.png)
+![TraderRush screenshot](docs/screenshot.png)
 
 > All prices, order-flow and order-book data on screen are synthetic (clearly
-> labeled **MOCK DATA** in the header). There is no real market connection, no
+> labeled **MOCK DATA** in the header, flips to **LIVE (MCP)** only once a real
+> candle-history tool call actually succeeds). There is no real market connection, no
 > account, and no real money at risk — this is a UI/UX prototype.
 
-**New in 0.2:** live entry/SL/TP lines on the chart for open positions, execution-safety
-toggles (confirmation requirement, swipe-trade opt-in) with risk alerts, a scrollable
-positions/orders dock, and a corrected pinch-to-zoom anchor.
+**New in 0.3:** a real MCP connection layer — config sheet, enable toggle, and a footer
+status indicator — that genuinely attempts the MCP handshake and a candle-history tool
+call rather than just toggling a label; a second, more reliable zoom path (⌥+scroll); and
+the app's rename from SetupRush Trader to TraderRush.
 
 ## What's in this build
 
-- **Chart**: candlestick rendering, pinch-to-zoom anchored at the pinch point, pan, and
-  live entry/SL/TP lines for open positions — SL updates automatically as BE/TSL ratchet
-  it, and the lines disappear the moment a position closes
+- **Chart**: candlestick rendering, pinch-to-zoom and ⌥+scroll zoom (both anchored at the
+  cursor/pinch point), pan, and live entry/SL/TP lines for open positions — SL updates
+  automatically as BE/TSL ratchet it, and the lines disappear the moment a position closes
+- **MCP connection**: a config sheet (gear icon) with editable host/port/path/TLS/auth
+  fields and an explicit Save, an Enable toggle, and a footer status indicator
+  (disabled/connecting/connected/failed). Enabling it performs a real MCP `initialize` →
+  `tools/list` → `tools/call` round trip; if your server exposes a recognized
+  candle-history tool, real data replaces the mock chart — otherwise it reports exactly
+  why not, and stays in Demo Mode. Never claims "live" without data to show for it.
 - **Footprint / order-flow view**: Bid×Ask and Delta display modes, with a
   zoomed-in numeric tier (bid/ask/delta per price level) built on the causal
   bid/ask-split construction from the DeltaTrader order-flow playbook
+- **Account budget**: a balance header above the ticket, colored relative to the starting
+  balance, with an animated digit-roll when a position closes
 - **Order ticket**: Buy/Sell, quantity, and a full SL / TSL (trailing stop) / TP /
   BE (breakeven) bracket
 - **Synthetic DOM ladder** with heat-bars, clearly labeled as mock
@@ -56,7 +66,7 @@ swift build
 To package a real `.app` bundle (for dragging to the Dock):
 
 ```bash
-AppPackaging/make_app.sh
+./build.sh
 ```
 
 Requires macOS 14+.

@@ -20,6 +20,14 @@ final class TrackpadCaptureNSView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func scrollWheel(with event: NSEvent) {
+        // Spec §7.1.4: "⌥ (Option) + scroll, anchored at cursor" — the mouse equivalent of
+        // pinch-zoom. Also a second, simpler path to actually trigger zoom at all, since a
+        // trackpad's magnify() gesture has been unreliable to verify in this environment.
+        if event.modifierFlags.contains(.option) {
+            let anchorX = convert(event.locationInWindow, from: nil).x
+            onZoom(event.scrollingDeltaY / 200, anchorX)
+            return
+        }
         if event.phase.contains(.began) {
             verticalAccum = 0
             onGestureBegin()

@@ -18,16 +18,33 @@ struct ChartView: View {
     var onGestureChange: (CGFloat) -> Void
     var onGestureEnd: (CGFloat) -> Void
 
-    private let minWidth: CGFloat = 4, maxWidth: CGFloat = 90
+    private let minWidth: CGFloat = 4
+    // Raised from 90: bin row height is driven by vertical price-span auto-scale (fewer
+    // visible candles -> smaller aggregate high/low range -> taller rows), not by
+    // candleWidth directly. 90 didn't let you zoom in far enough horizontally to shrink
+    // that range down to readable bin heights — this does.
+    private let maxWidth: CGFloat = 400
     // Raised from 70 — the old threshold left barely enough width for 3-digit numbers at a
     // legible size, which is exactly what made the detailed footprint unreadable.
     private let detailThreshold: CGFloat = 85
 
+    // Both the renderer and the pinch-zoom anchor must clamp `startIndex` the exact same
+    // way, or the anchor math runs against a `start` that was never actually on screen.
+    // This was the recurring "zoom doesn't work" bug: the old onZoom closure couldn't see
+    // the chart's pixel width (only the Canvas draw closure had it), so it used the raw,
+    // unclamped startIndex — wrong whenever that exceeded maxStart, which is exactly the
+    // common case right after launch before any panning.
+    private func clampedStart(_ width: CGFloat, chartWidth: CGFloat) -> Int {
+        let visibleCount = max(1, Int(chartWidth / width))
+        let maxStart = max(0, candles.count - visibleCount)
+        return min(max(0, Int(startIndex)), maxStart)
+    }
+
     var body: some View {
+        GeometryReader { geo in
         Canvas { context, size in
             let visibleCount = max(1, Int(size.width / candleWidth))
-            let maxStart = max(0, candles.count - visibleCount)
-            let start = min(max(0, Int(startIndex)), maxStart)
+            let start = clampedStart(candleWidth, chartWidth: size.width)
             let end = min(candles.count, start + visibleCount)
             guard start < end else { return }
             let visible = candles[start..<end]
@@ -106,11 +123,8 @@ struct ChartView: View {
                     let newWidth = min(maxWidth, max(minWidth, oldWidth * (1 + magnification)))
                     guard newWidth != oldWidth else { return }
                     // Must match the render formula exactly: x = (i_global - start) * candleWidth
-                    // + candleWidth/2, where `start` is the floored startIndex the renderer
-                    // actually slices on. The previous version used continuous startIndex and
-                    // dropped the +candleWidth/2 term, so every pinch tick anchored to the wrong
-                    // point and the view visibly drifted/jumped instead of zooming in place.
-                    let start = Double(Int(startIndex))
+                    // + candleWidth/2, using the same clamped `start` the renderer actually used.
+                    let start = Double(clampedStart(oldWidth, chartWidth: geo.size.width))
                     let anchorGlobalIndex = start + Double(anchorX / oldWidth) - 0.5
                     candleWidth = newWidth
                     startIndex = max(0, anchorGlobalIndex - Double(anchorX / newWidth) + 0.5)
@@ -120,6 +134,7 @@ struct ChartView: View {
                 onGestureEnd: onGestureEnd
             )
         )
+        }
     }
 
     // Zoomed-out footprint: no room for numbers, but the mode picker must still visibly do
@@ -165,7 +180,9 @@ struct ChartView: View {
         // 9px row) was the "not readable at all" complaint. Only render once there's
         // actually room for that size, rather than shrinking text to fit.
         guard rowHeight >= 15 else { return }
-        let fontSize = min(14, max(12, rowHeight - 5))
+        // Scales with the box, not capped at spec's 13-14pt ladder minimum — once you've
+        // zoomed in far enough to get tall rows, the numbers should actually fill them.
+        let fontSize = min(26, max(12, rowHeight * 0.4))
         let maxAbsDelta = max(bar.priceBins.map { abs($0.delta) }.max() ?? 1, 1)
 
         for bin in bar.priceBins {

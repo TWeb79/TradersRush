@@ -1,6 +1,7 @@
 .build/
 .swiftpm/
 .DS_Store
+/TraderRush.app/
 /SetupRush Trader.app/
 graphify-out/
 .claude/

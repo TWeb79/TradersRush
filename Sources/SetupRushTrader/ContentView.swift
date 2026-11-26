@@ -16,7 +16,11 @@ struct ContentView: View {
     // EUR per 1.00 price move per contract — placeholder until a real InstrumentSpec
     // (tickValue/pointValue) exists; only used to size the mock P&L alert.
     private let mockPointValue: Decimal = 20
+    // Starting mock account balance — placeholder until a real AccountSnapshot (spec §6.4)
+    // exists. The budget header colors green/red relative to this, not to zero.
+    private let startingBudget: Decimal = 10000
 
+    @State private var budget: Decimal = 10000
     @State private var candles: [Candle] = []
     @State private var footprint: [FootprintBar] = []
     @State private var ladder: [LadderLevel] = []
@@ -50,25 +54,35 @@ struct ContentView: View {
     @State private var swipeTradeEnabled = false     // on = trackpad gesture can submit real orders
     @State private var pendingRiskAlert: RiskAlertKind?
 
+    // MCP connection (spec §5 Connection Setup, §6.6 state machine, minimal scope).
+    @State private var mcpConfig = MCPConfig()
+    @State private var mcpEnabled = false
+    @State private var mcpStatus: MCPConnectionStatus = .disabled
+    @State private var showMCPConfig = false
+    // True only once a real tools/call round-trip actually produced usable candles —
+    // never set just because the transport connected. See MCPClient.fetchCandleHistory.
+    @State private var liveDataActive = false
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("SetupRush Trader")
+                Text("TraderRush")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
-                Text("BETA 0.2")
+                Text("BETA 0.3")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(Theme.borderSubtle, lineWidth: 1))
-                // Honest data-source badge, not decoration — nothing on screen is live
-                // yet, and silently showing synthetic prices as real would be exactly the
-                // kind of fabricated-data problem the CX brief §12/§16 warns against.
-                Text("MOCK DATA")
+                // Honest data-source badge, not decoration — flips to LIVE only once
+                // MCPClient.fetchCandleHistory actually returned usable candles, never just
+                // because the transport connected. Silently showing synthetic prices as real
+                // is exactly the fabricated-data problem the CX brief §12/§16 warns against.
+                Text(liveDataActive ? "LIVE (MCP)" : "MOCK DATA")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.warn)
+                    .foregroundStyle(liveDataActive ? Theme.bull : Theme.warn)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Theme.warn.opacity(0.5), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke((liveDataActive ? Theme.bull : Theme.warn).opacity(0.5), lineWidth: 1))
                 Spacer(minLength: 12)
                 // Horizontal scroll as a safety net: a plain HStack silently clips/hides
                 // trailing content instead of shrinking it when the window gets narrow —
@@ -104,6 +118,15 @@ struct ContentView: View {
                             .onChange(of: swipeTradeEnabled) { old, new in
                                 if !old && new { pendingRiskAlert = .enableSwipeTrade }
                             }
+                        Divider().frame(height: 16).background(Theme.borderSubtle)
+                        Button { showMCPConfig = true } label: {
+                            Image(systemName: "gearshape").foregroundStyle(Theme.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                        .sheet(isPresented: $showMCPConfig) {
+                            MCPConfigSheet(config: mcpConfig, enabled: mcpEnabled, status: mcpStatus,
+                                           onSave: { mcpConfig = $0 }, onToggle: setMCPEnabled)
+                        }
                     }
                     .fixedSize()
                 }
@@ -134,11 +157,25 @@ struct ContentView: View {
                               })
                     GestureArmOverlay(active: gestureActive, delta: gestureDelta, threshold: armThreshold)
                 }
-                Sidebar(ladder: ladder, lastPrice: candles.last?.c, qty: $ticketQty, bracket: $bracket,
+                Sidebar(ladder: ladder, lastPrice: candles.last?.c, budget: budget, startingBudget: startingBudget,
+                        qty: $ticketQty, bracket: $bracket,
                         onBuy: { trigger(.long) }, onSell: { trigger(.short) })
             }
 
             Dock(positions: positions, orders: orders, currentPrice: candles.last?.c, pointValue: mockPointValue)
+
+            // Footer (spec §7.5 HD-02 pattern, minimal scope): MCP connection status is
+            // always visible, never silently implied — per the app's own honesty rule, the
+            // header's MOCK DATA badge stays regardless of this, since real tool-call data
+            // isn't wired up yet even when the transport is reachable.
+            HStack(spacing: 6) {
+                Circle().fill(mcpStatus.color).frame(width: 6, height: 6)
+                Text(mcpStatus.label).font(.system(size: 10)).foregroundStyle(Theme.textSecondary)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 5)
+            .background(Theme.bgSurface)
+            .overlay(Rectangle().fill(Theme.borderSubtle).frame(height: 1), alignment: .top)
         }
         .frame(minWidth: 1180, minHeight: 700)
         .background(Theme.bgBase)
@@ -184,13 +221,68 @@ struct ContentView: View {
         }
     }
 
-    private func load() {
+    // Enabling genuinely attempts a connection and reports whatever actually happens
+    // (connected/failed with the real reason); disabling always drops straight back to
+    // Demo Mode. Never shows "live" without a successful round trip.
+    private func setMCPEnabled(_ newValue: Bool) {
+        mcpEnabled = newValue
+        guard newValue else {
+            mcpStatus = .disabled
+            liveDataActive = false
+            loadMockData() // drop straight back to Demo Mode, never leave stale live candles up
+            return
+        }
+        mcpStatus = .connecting
+        let config = mcpConfig
+        Task {
+            let transportResult = await MCPClient.testConnection(config: config)
+            await MainActor.run {
+                guard mcpEnabled else { return } // user disabled again before this returned
+                switch transportResult {
+                case .success: mcpStatus = .live
+                case .failure(let error): mcpStatus = .failed(error.message)
+                }
+            }
+            guard case .success = transportResult else { return }
+
+            // Transport is reachable — now the part that's genuinely unconfirmed: does this
+            // server expose a candle-history tool under a name we recognize? Mirrors
+            // exactly what a MockTradingGateway call would produce if it succeeds.
+            let historyResult = await MCPClient.fetchCandleHistory(config: config, symbol: "EURUSD", timeframe: "M1", bars: 300)
+            await MainActor.run {
+                guard mcpEnabled else { return }
+                switch historyResult {
+                case .success(let liveCandles) where !liveCandles.isEmpty:
+                    candles = liveCandles
+                    footprint = gateway.footprint(for: candles, tickSize: tickSize)
+                    if let last = candles.last?.c {
+                        ladder = gateway.ladder(around: last, tickSize: tickSize, levels: 12)
+                    }
+                    startIndex = Double(max(0, candles.count - 80))
+                    liveDataActive = true
+                case .success:
+                    mcpStatus = .failed("Candle tool returned no bars")
+                case .failure(let error):
+                    // Transport works, but no usable market-data tool — stay connected
+                    // (the server may still support trading tools later) but keep showing
+                    // mock candles rather than nothing, and say exactly why.
+                    mcpStatus = .failed(error.message)
+                }
+            }
+        }
+    }
+
+    private func loadMockData() {
         candles = gateway.history(tickSize: tickSize, bars: 300)
         footprint = gateway.footprint(for: candles, tickSize: tickSize)
         if let last = candles.last?.c {
             ladder = gateway.ladder(around: last, tickSize: tickSize, levels: 12)
         }
         startIndex = Double(max(0, candles.count - 80))
+    }
+
+    private func load() {
+        loadMockData()
         #if DEBUG
         armDirectionSelfCheck()
         #endif
@@ -270,7 +362,14 @@ struct ContentView: View {
 
             if let exit = exitPrice {
                 let pnlPoints = pos.side == .buy ? exit - pos.avgPrice : pos.avgPrice - exit
-                showPnLAlert(pnlPoints * Decimal(pos.volume) * mockPointValue)
+                let pnl = pnlPoints * Decimal(pos.volume) * mockPointValue
+                showPnLAlert(pnl)
+                // Budget starts counting shortly after the alert pops in, so the two read
+                // as one sequence (fly in, then the balance rolls to its new total) rather
+                // than both firing at once.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    withAnimation(.easeOut(duration: 1.0)) { budget += pnl }
+                }
             } else {
                 stillOpen.append(pos)
             }

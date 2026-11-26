@@ -9,13 +9,13 @@
     <key>CFBundleIdentifier</key>
     <string>com.setuprush.trader.prototype</string>
     <key>CFBundleName</key>
-    <string>SetupRush Trader</string>
+    <string>TraderRush</string>
     <key>CFBundleDisplayName</key>
-    <string>SetupRush Trader (Beta 0.2)</string>
+    <string>TraderRush (Beta 0.3)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2-beta</string>
+    <string>0.3-beta</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
