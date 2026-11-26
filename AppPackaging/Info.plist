@@ -22,5 +22,7 @@
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Developed by github.com/TWeb79</string>
 </dict>
 </plist>
