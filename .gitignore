@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+.DS_Store
+/SetupRush Trader.app/
+graphify-out/
+.claude/
+deltratrader*.md
