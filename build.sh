@@ -1,7 +1,33 @@
+
 #!/bin/bash
-# Convenience entry point: run this from the project root (./build.sh) to build the
-# release binary and package it as TradersRush.app. Thin wrapper around the real script
-# so it doesn't need to live at the repo root.
-set -e
+
+# Build and package TradersRush.app,
+# then commit and push changes to Git.
+
+set -euo pipefail
+
 cd "$(dirname "$0")"
+
+# Build application
+echo "==> Building TradersRush.app..."
 ./AppPackaging/make_app.sh
+
+# Stage changes
+echo "==> Staging Git changes..."
+git add -A
+
+# Commit if changes exist
+if ! git diff --cached --quiet; then
+    COMMIT_MESSAGE="${1:-Build TradersRush - $(date '+%Y-%m-%d %H:%M:%S')}"
+    
+    echo "==> Committing changes..."
+    git commit -m "$COMMIT_MESSAGE"
+else
+    echo "==> No changes to commit."
+fi
+
+# Push current branch
+echo "==> Pushing to remote repository..."
+git push origin "$(git branch --show-current)"
+
+echo "==> Build, commit and push completed successfully."

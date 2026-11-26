@@ -125,19 +125,27 @@ struct ContentView: View {
                             .onChange(of: swipeTradeEnabled) { old, new in
                                 if !old && new { pendingRiskAlert = .enableSwipeTrade }
                             }
-                        Divider().frame(height: 16).background(Theme.borderSubtle)
-                        Button { showMCPConfig = true } label: {
-                            Image(systemName: "gearshape").foregroundStyle(Theme.textSecondary)
-                        }
-                        .buttonStyle(.plain)
-                        .sheet(isPresented: $showMCPConfig) {
-                            MCPConfigSheet(config: mcpConfig, enabled: mcpEnabled, status: mcpStatus,
-                                           onSave: { mcpConfig = $0; AppConfigStore.save(currentAppConfig()) }, onToggle: setMCPEnabled)
-                        }
                     }
                     .fixedSize()
                 }
-                .frame(maxWidth: 560)
+                // No width cap: the window's minWidth (1180) leaves comfortable room for
+                // these four toggles. The ScrollView stays only as a safety net for an
+                // unusually narrow window — an arbitrary cap is what clipped "Swipe trade"
+                // down to a single "S" the moment Extended View was added.
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                // Pinned outside the scroll area, never hideable: a scrolling cluster has no
+                // visible scrollbar (showsIndicators: false), so anything inside it can only
+                // be reached by guessing to scroll — exactly what happened to this icon once
+                // Extended View pushed the toggle cluster past its width cap.
+                Divider().frame(height: 16).background(Theme.borderSubtle)
+                Button { showMCPConfig = true } label: {
+                    Image(systemName: "gearshape").foregroundStyle(Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showMCPConfig) {
+                    MCPConfigSheet(config: mcpConfig, enabled: mcpEnabled, status: mcpStatus,
+                                   onSave: { mcpConfig = $0; AppConfigStore.save(currentAppConfig()) }, onToggle: setMCPEnabled)
+                }
             }
             .padding(12)
             .background(Theme.bgSurface)
